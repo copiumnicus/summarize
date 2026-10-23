@@ -24,7 +24,7 @@ for secret_name in MACOS_SIGNING_P12 MACOS_SIGNING_P12_PASSWORD ASC_KEY_ID ASC_I
     exit 1
   }
 done
-for tool in codesign csreq lipo mktemp plutil tar; do
+for tool in arch codesign csreq lipo mktemp otool plutil tar; do
   command -v "$tool" >/dev/null 2>&1 || {
     echo "missing required command: $tool" >&2
     exit 1
@@ -64,6 +64,8 @@ actual_arch=$(lipo -archs "$BINARY" | tr -d '[:space:]')
   echo "release binary architecture is $actual_arch, expected $EXPECTED_ARCH" >&2
   exit 1
 }
+
+"$(dirname "${BASH_SOURCE[0]}")/check-macos-target.sh" "$BINARY"
 
 signature=$(codesign -dvvv "$BINARY" 2>&1)
 grep -Fqx "Identifier=$IDENTIFIER" <<<"$signature"
@@ -110,7 +112,8 @@ if (
 }
 NODE
 
-version_output=$(env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin "$BINARY" --version)
+arch_tool=$(command -v arch)
+version_output=$(env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin "$arch_tool" "-$EXPECTED_ARCH" "$BINARY" --version)
 if [[ "$version_output" != "$EXPECTED_VERSION" &&
   ! "$version_output" =~ ^${EXPECTED_VERSION//./\.}[[:space:]]+\([0-9a-f]{8}\)$ ]]; then
   echo "release binary reports $version_output, expected $EXPECTED_VERSION" >&2

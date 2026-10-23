@@ -101,6 +101,7 @@ export async function execCliWithInput({
   cwd,
   signal,
   redactedCommand,
+  failureHint,
   inheritEnv = true,
 }: {
   execFileImpl: ExecFileFn;
@@ -112,6 +113,7 @@ export async function execCliWithInput({
   cwd?: string;
   signal?: AbortSignal;
   redactedCommand?: string;
+  failureHint?: string;
   inheritEnv?: boolean;
 }): Promise<{ stdout: string; stderr: string }> {
   return await new Promise((resolve, reject) => {
@@ -200,7 +202,10 @@ export async function execCliWithInput({
             reject(
               attachStdout(
                 new Error(
-                  formatErrorMessageWithStderr(errorMessage, stderrText),
+                  formatErrorMessageWithStderr(
+                    failureHint ? `${errorMessage}\n${failureHint}` : errorMessage,
+                    stderrText,
+                  ),
                   errorOptions(error, redactedCommand),
                 ),
                 stdoutText,
@@ -226,8 +231,20 @@ export async function execCliWithInput({
     }
 
     if (child.stdin) {
-      child.stdin.write(input);
-      child.stdin.end();
+      const stdin = child.stdin;
+      if (typeof stdin.on === "function") {
+        stdin.on("error", (error: NodeJS.ErrnoException) => {
+          if (error?.code === "EPIPE" || error?.code === "ERR_STREAM_DESTROYED") return;
+          reject(error);
+        });
+      }
+      try {
+        stdin.write(input);
+        stdin.end();
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException | null)?.code;
+        if (code !== "EPIPE" && code !== "ERR_STREAM_DESTROYED") reject(error);
+      }
     }
   });
 }
